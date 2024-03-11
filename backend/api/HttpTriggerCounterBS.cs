@@ -1,54 +1,57 @@
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Logging;
+using System.Net;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Logging;
 using System.Threading.Tasks;
+using Microsoft.Azure.Cosmos;
+using System.Text.Json;
+using System.IO;
 
 
 namespace Company.Function
 {
     public class HttpTriggerCounterBS
     {
-        private readonly ILogger<HttpTriggerCounterBS> _logger;
+        private readonly ILogger _logger;
         private CosmosClient _cosmosClient;
         private Container _container;
 
-        public HttpTriggerCounterBS(ILogger<HttpTriggerCounterBS> logger)
+        public HttpTriggerCounterBS(ILoggerFactory loggerFactory)
         {
-            _logger = logger;
+            _logger = loggerFactory.CreateLogger<HttpTriggerCounterBS>();
 
             string connectionString = Environment.GetEnvironmentVariable("AzureResumeConnectionString");
-            if(string.IsNullOrEmpty(connectionString))
-            {
-                throw new InvalidOperationException("CosmosDB connection string is not set in the environment variables.");
-            }
-
-            _container = _cosmosClient.GetContainer("azureresumebsz","Counter");
+            _cosmosClient = new CosmosClient(connectionString);
+            _container = _cosmosClient.GetContainer("AzureResume", "Counter");
         }
 
         [Function("HttpTriggerCounterBS")]
-        public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequest req)
+        public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req)
         {
             _logger.LogInformation("C# HTTP trigger function processed a request.");
 
-            try
-            {
-                var response = await _container.ReadItemAsync<dynamic>("1", new PartitionKey("1"));
-                var item = response.Resource;
+            string itemID = "1";
+            string partitionKeyValue = "1";
 
-                return new OkObjectResult(item);
-            }
-            catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                _logger.LogWarning($"Item not found. Details: {ex.Message}");
-                return new NotFoundResult();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"An error occurred: {ex.Message}");
-                return new StatusCodeResult(StatusCodes.Status500InternalServerError);
-            }
+            ItemResponse<dynamic> itemResponse = await _container.ReadItemAsync<dynamic>(
+                itemID, new PartitionKey(partitionKeyValue));
+
+            dynamic item = itemResponse.Resource;
+            int currentCount = item.count;
+            int newCount = currentCount+1;
+
+            item.count = newCount;
+            await _container.ReplaceItemAsync(item,itemID, new PartitionKey(partitionKeyValue));
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            response.Headers.Add("Content-Type", "application/json; charset=utf-8");
+
+            //await response.WriteStringAsync(JsonSerializer.Serialize(new {count = newCount}));
+
+            await response.WriteStringAsync(JsonSerializer.Serialize(newCount));
+
+            return response;
         }
     }
 }
