@@ -47,9 +47,9 @@ namespace Company.Function
             var response = req.CreateResponse(HttpStatusCode.OK);
             response.Headers.Add("Content-Type", "application/json; charset=utf-8");
 
-            //await response.WriteStringAsync(JsonSerializer.Serialize(new {count = newCount}));
+            await response.WriteStringAsync(JsonSerializer.Serialize(new {count = newCount}));
 
-            await response.WriteStringAsync(JsonSerializer.Serialize(newCount));
+            // await response.WriteStringAsync(JsonSerializer.Serialize(newCount));
 
             return response;
         }
